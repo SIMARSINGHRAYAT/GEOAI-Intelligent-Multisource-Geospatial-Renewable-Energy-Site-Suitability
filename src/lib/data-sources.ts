@@ -1,0 +1,40 @@
+import type { DataSourceRecord } from "@/lib/types";
+
+export const DATA_SOURCES: DataSourceRecord[] = [
+  {
+    provider: "NASA POWER",
+    dataset: "POWER Climatology Point",
+    acquisitionDate: new Date().toISOString(),
+    spatialResolution: "~0.5° x 0.5° native grid",
+    temporalCoverage: "Climatological monthly means",
+    units: "kWh/m²/day, m/s, °C, mm/day",
+    license: "NASA Open Data",
+    extent: "Global",
+    sourceUrl: "https://power.larc.nasa.gov/",
+    notes: "Used for GHI, DNI, wind speed, temperature, precipitation proxies.",
+  },
+  {
+    provider: "Open-Meteo",
+    dataset: "Elevation API",
+    acquisitionDate: new Date().toISOString(),
+    spatialResolution: "Provider-dependent DEM",
+    temporalCoverage: "Static terrain",
+    units: "meters",
+    license: "Open-Meteo terms",
+    extent: "Global",
+    sourceUrl: "https://open-meteo.com/en/docs/elevation-api",
+    notes: "Used for terrain elevation screening.",
+  },
+  {
+    provider: "User/Derived",
+    dataset: "Derived slope and suitability grids",
+    acquisitionDate: new Date().toISOString(),
+    spatialResolution: "Configurable analysis grid",
+    temporalCoverage: "Per analysis run",
+    units: "score 0-100",
+    license: "Application-generated",
+    extent: "Study region",
+    sourceUrl: "internal",
+    notes: "Generated from deterministic multi-criteria rules with explicit assumptions.",
+  },
+];
