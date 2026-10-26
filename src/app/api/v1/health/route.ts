@@ -1,16 +1,16 @@
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
+import { storage } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    await db.execute(sql`select 1`);
-    return Response.json({ status: "ok", service: "GeoRenew AI API", version: "v1" });
-  } catch (error) {
-    return Response.json(
-      { status: "failed", message: "Database connectivity issue", error: String(error) },
-      { status: 500 },
-    );
-  }
+  const health = await storage.checkHealth();
+  return Response.json({
+    status: "ok",
+    service: "GeoRenew AI Platform",
+    version: "v1.0.0",
+    architecture: "standalone-serverless",
+    databaseRequired: false,
+    engine: health.engine,
+    stats: health.stats,
+  });
 }

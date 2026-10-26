@@ -1,10 +1,10 @@
-import { db } from "@/db";
-import { analyses } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { storage } from "@/lib/storage";
 import { z } from "zod";
 
+export const dynamic = "force-dynamic";
+
 const schema = z.object({
-  analysisId: z.string().uuid(),
+  analysisId: z.string(),
   scenarios: z.array(
     z.object({
       name: z.string().min(2),
@@ -21,11 +21,11 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = schema.parse(body);
 
-    const [analysis] = await db.select().from(analyses).where(eq(analyses.id, parsed.analysisId));
+    const analysis = await storage.getAnalysisById(parsed.analysisId);
     if (!analysis) return Response.json({ error: "Analysis not found" }, { status: 404 });
 
     const layer = (analysis.results as { layerGeojson?: { features?: Array<{ properties?: { suitability?: number } }> } })
-      .layerGeojson;
+      ?.layerGeojson;
 
     const suitability = layer?.features?.map((f) => f.properties?.suitability ?? 0) ?? [];
 

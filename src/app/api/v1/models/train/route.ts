@@ -1,6 +1,7 @@
-import { db } from "@/db";
-import { mlModels } from "@/db/schema";
+import { storage } from "@/lib/storage";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
 
 const schema = z.object({
   name: z.string().min(3),
@@ -14,17 +15,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = schema.parse(body);
 
-    const [saved] = await db
-      .insert(mlModels)
-      .values({
-        name: parsed.name,
-        energyType: parsed.energyType,
-        algorithm: parsed.algorithm,
-        version: `v${Date.now()}`,
-        metrics: parsed.metrics,
-        isActive: "false",
-      })
-      .returning();
+    const saved = await storage.createMlModel({
+      name: parsed.name,
+      energyType: parsed.energyType,
+      algorithm: parsed.algorithm,
+      metrics: parsed.metrics,
+    });
 
     return Response.json({ model: saved }, { status: 201 });
   } catch (error) {

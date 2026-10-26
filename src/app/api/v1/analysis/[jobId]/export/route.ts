@@ -1,6 +1,6 @@
-import { db } from "@/db";
-import { analyses, candidateSites } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { storage } from "@/lib/storage";
+
+export const dynamic = "force-dynamic";
 
 function toCsv(rows: Array<Record<string, unknown>>) {
   if (!rows.length) return "";
@@ -30,10 +30,10 @@ export async function GET(
   const { searchParams } = new URL(req.url);
   const format = searchParams.get("format") ?? "geojson";
 
-  const [analysis] = await db.select().from(analyses).where(eq(analyses.id, jobId));
+  const analysis = await storage.getAnalysisById(jobId);
   if (!analysis) return Response.json({ error: "Analysis not found" }, { status: 404 });
 
-  const sites = await db.select().from(candidateSites).where(eq(candidateSites.analysisId, jobId));
+  const sites = await storage.getCandidateSites(jobId);
 
   const layer = (analysis.results as { layerGeojson?: Record<string, unknown> }).layerGeojson ?? {
     type: "FeatureCollection",

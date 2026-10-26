@@ -1,7 +1,7 @@
-import { db } from "@/db";
-import { projects } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { storage } from "@/lib/storage";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
 
 const projectSchema = z.object({
   name: z.string().min(3).max(120),
@@ -10,7 +10,7 @@ const projectSchema = z.object({
 });
 
 export async function GET() {
-  const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
+  const rows = await storage.listProjects();
   return Response.json({ projects: rows });
 }
 
@@ -19,14 +19,11 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = projectSchema.parse(body);
 
-    const [inserted] = await db
-      .insert(projects)
-      .values({
-        name: parsed.name,
-        description: parsed.description,
-        regionGeojson: parsed.regionGeojson ?? null,
-      })
-      .returning();
+    const inserted = await storage.createProject({
+      name: parsed.name,
+      description: parsed.description,
+      regionGeojson: parsed.regionGeojson ?? null,
+    });
 
     return Response.json({ project: inserted }, { status: 201 });
   } catch (error) {

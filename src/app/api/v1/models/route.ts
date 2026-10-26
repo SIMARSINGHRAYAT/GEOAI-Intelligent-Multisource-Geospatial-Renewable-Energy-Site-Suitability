@@ -1,8 +1,8 @@
-import { db } from "@/db";
-import { mlModels } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { storage } from "@/lib/storage";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const models = await db.select().from(mlModels).orderBy(desc(mlModels.createdAt));
+  const models = await storage.listMlModels();
   return Response.json({ models });
 }

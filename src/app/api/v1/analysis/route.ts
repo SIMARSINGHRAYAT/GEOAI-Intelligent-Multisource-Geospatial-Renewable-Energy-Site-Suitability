@@ -1,10 +1,10 @@
-import { db } from "@/db";
-import { analyses, candidateSites } from "@/db/schema";
+import { storage } from "@/lib/storage";
 import { validateRegionGeojson } from "@/lib/geo";
 import { runAnalysis } from "@/lib/analysis-engine";
 import type { EnergyType } from "@/lib/types";
-import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
 
 const schema = z.object({
   projectId: z.string().uuid().optional(),
@@ -20,7 +20,7 @@ const schema = z.object({
 });
 
 export async function GET() {
-  const rows = await db.select().from(analyses).orderBy(desc(analyses.createdAt));
+  const rows = await storage.listAnalyses();
   return Response.json({ analyses: rows });
 }
 
@@ -36,32 +36,29 @@ export async function POST(req: Request) {
       return Response.json({ error: validation.reason }, { status: 400 });
     }
 
-    const [created] = await db
-      .insert(analyses)
-      .values({
-        projectId: parsed.projectId,
-        energyType: parsed.energyType,
-        status: "Fetching Data",
-        regionGeojson: parsed.regionGeojson,
-        centroidLat: validation.centroid.lat,
-        centroidLng: validation.centroid.lng,
-        inputParams: parsed.params ?? {},
-        metrics: { stage: "queued" },
-        results: {},
-      })
-      .returning();
+    const created = await storage.createAnalysis({
+      projectId: parsed.projectId,
+      energyType: parsed.energyType,
+      status: "Fetching Data",
+      regionGeojson: parsed.regionGeojson,
+      centroidLat: validation.centroid.lat,
+      centroidLng: validation.centroid.lng,
+      inputParams: (parsed.params as Record<string, unknown>) ?? {},
+      metrics: { stage: "queued" },
+      results: {},
+    });
 
     createdId = created.id;
 
-    await db
-      .update(analyses)
-      .set({ status: "Preprocessing", updatedAt: new Date(), metrics: { stage: "preprocessing" } })
-      .where(eq(analyses.id, created.id));
+    await storage.updateAnalysis(created.id, {
+      status: "Preprocessing",
+      metrics: { stage: "preprocessing" },
+    });
 
-    await db
-      .update(analyses)
-      .set({ status: "Running Models", updatedAt: new Date(), metrics: { stage: "running-models" } })
-      .where(eq(analyses.id, created.id));
+    await storage.updateAnalysis(created.id, {
+      status: "Running Models",
+      metrics: { stage: "running-models" },
+    });
 
     const execution = await runAnalysis({
       energyType: parsed.energyType as EnergyType,
@@ -69,20 +66,16 @@ export async function POST(req: Request) {
       params: parsed.params ?? {},
     });
 
-    await db
-      .update(analyses)
-      .set({
-        status: "Generating Spatial Results",
-        updatedAt: new Date(),
-        metrics: {
-          ...execution.metrics,
-          stage: "generating-results",
-        },
-      })
-      .where(eq(analyses.id, created.id));
+    await storage.updateAnalysis(created.id, {
+      status: "Generating Spatial Results",
+      metrics: {
+        ...execution.metrics,
+        stage: "generating-results",
+      },
+    });
 
     if (execution.candidates.length) {
-      await db.insert(candidateSites).values(
+      await storage.insertCandidateSites(
         execution.candidates.map((site) => ({
           analysisId: created.id,
           siteId: site.siteId,
@@ -99,42 +92,33 @@ export async function POST(req: Request) {
       );
     }
 
-    await db
-      .update(analyses)
-      .set({
-        status: "Completed",
-        centroidLat: execution.centroid.lat,
-        centroidLng: execution.centroid.lng,
-        metrics: {
-          ...execution.metrics,
-          stage: "completed",
+    const completed = await storage.updateAnalysis(created.id, {
+      status: "Completed",
+      centroidLat: execution.centroid.lat,
+      centroidLng: execution.centroid.lng,
+      metrics: {
+        ...execution.metrics,
+        stage: "completed",
+      },
+      results: {
+        dataSummary: execution.data,
+        layerGeojson: execution.layerGeojson,
+        assumptions: {
+          note: "Deterministic baseline suitability used. ML model inference available with validated training datasets.",
         },
-        results: {
-          dataSummary: execution.data,
-          layerGeojson: execution.layerGeojson,
-          assumptions: {
-            note: "Deterministic baseline suitability used. ML model inference available only with validated training datasets.",
-          },
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(analyses.id, created.id));
+      },
+    });
 
-    const [completed] = await db.select().from(analyses).where(eq(analyses.id, created.id));
-    return Response.json({ job: completed }, { status: 201 });
+    return Response.json({ job: completed ?? created }, { status: 201 });
   } catch (error) {
     if (createdId) {
-      await db
-        .update(analyses)
-        .set({
-          status: "Failed",
-          updatedAt: new Date(),
-          metrics: {
-            stage: "failed",
-            reason: String(error),
-          },
-        })
-        .where(eq(analyses.id, createdId));
+      await storage.updateAnalysis(createdId, {
+        status: "Failed",
+        metrics: {
+          stage: "failed",
+          reason: String(error),
+        },
+      });
     }
 
     return Response.json({ error: "Analysis failed", detail: String(error) }, { status: 400 });

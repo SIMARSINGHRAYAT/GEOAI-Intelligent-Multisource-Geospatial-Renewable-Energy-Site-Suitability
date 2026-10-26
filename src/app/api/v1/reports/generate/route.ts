@@ -1,11 +1,11 @@
-import { db } from "@/db";
-import { analyses, candidateSites } from "@/db/schema";
+import { storage } from "@/lib/storage";
 import { DATA_SOURCES } from "@/lib/data-sources";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 
+export const dynamic = "force-dynamic";
+
 const schema = z.object({
-  analysisId: z.string().uuid(),
+  analysisId: z.string(),
 });
 
 export async function POST(req: Request) {
@@ -13,13 +13,13 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { analysisId } = schema.parse(body);
 
-    const [analysis] = await db.select().from(analyses).where(eq(analyses.id, analysisId));
+    const analysis = await storage.getAnalysisById(analysisId);
     if (!analysis) return Response.json({ error: "Analysis not found" }, { status: 404 });
 
-    const sites = await db.select().from(candidateSites).where(eq(candidateSites.analysisId, analysisId));
+    const sites = await storage.getCandidateSites(analysisId);
 
     const layer = (analysis.results as { layerGeojson?: { features?: Array<{ properties?: Record<string, unknown> }> } })
-      .layerGeojson;
+      ?.layerGeojson;
 
     const features = layer?.features ?? [];
     const classes: Record<string, number> = {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     const uncertaintySummary = {
       averageConfidencePct: features.length ? Number((confidenceAccumulator / features.length).toFixed(2)) : 0,
-      note: "Confidence reflects screening-quality data completeness and model suitability assumptions.",
+      note: "Confidence reflects screening-quality data completeness and deterministic suitability assumptions.",
     };
 
     const report = {
@@ -56,24 +56,25 @@ export async function POST(req: Request) {
       studyArea: {
         centroid: { lat: analysis.centroidLat, lng: analysis.centroidLng },
         energyType: analysis.energyType,
+        jobId: analysis.id,
       },
       datasetSpecifications: DATA_SOURCES,
       preprocessingMethodology:
-        "Region validation, source retrieval, feature harmonization, and grid-based scoring with transparent constraints.",
+        "Region validation, climatology and elevation retrieval, feature harmonization, and grid-based scoring with transparent physical and environmental constraints.",
       modelArchitecture:
-        "Deterministic baseline suitability model. ML outputs require separately validated labeled training datasets.",
+        "Deterministic baseline suitability model. Machine learning inference outputs require separately validated ground-truth training datasets.",
       mathematicalModeling: {
-        solar: "PV proxy: annual output ~ GHI × 365 × performance ratio assumptions",
-        wind: "P = 0.5 × rho × A × Cp × v^3 × eta (screening level)",
-        hydro: "P = rho × g × Q × H × eta (proxy Q/H assumptions)",
-        geothermal: "Exploratory geological proxy suitability only",
+        solar: "PV proxy: annual output ~ GHI × 365 × performance ratio assumptions (temperature & slope derating)",
+        wind: "P = 0.5 × rho × A × Cp × v^3 × eta (screening level 10m wind velocity with terrain slope factors)",
+        hydro: "P = rho × g × Q × H × eta (proxy runoff from precipitation & terrain head assumptions)",
+        geothermal: "Exploratory geological & topographic screening proxy suitability",
       },
       evaluation: analysis.metrics,
       suitabilityClassDistribution: classes,
       uncertaintySummary,
       candidateSiteRanking: sites,
       limitations:
-        "Results are screening-level and should be verified with local field, legal, and engineering assessments before investment decisions.",
+        "Results are screening-level and should be verified with local field, legal, grid-interconnection, and engineering assessments before investment decisions.",
       generatedAt: new Date().toISOString(),
     };
 
